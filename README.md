@@ -1,98 +1,64 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Prueba técnica – Productos (NestJS)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend construido con NestJS que expone información de productos financieros. La aplicación se levanta como **microservicio TCP** (no como servidor HTTP tradicional) y actualiza la información a partir de un mock en memoria.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Descripción general
 
-## Description
+- **Framework:** NestJS + TypeScript.
+- **Tipo de servicio:** microservicio basado en `Transport.TCP` escuchando en `127.0.0.1:4010` (`src/main.ts`).
+- **Dominio:** productos/accounts de un usuario (cuentas, CDT, créditos, etc.) definidos en `src/products/products.mock.ts`.
+- **Estado de los datos:** mock en memoria; no hay conexión a base de datos ni a otros servicios.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Arquitectura
 
-## Project setup
+| Componente | Detalle |
+| --- | --- |
+| `src/main.ts` | Usa `NestFactory.createMicroservice` y deja al servicio escuchando mensajes TCP. |
+| `AppModule` | Orquesta la aplicación importando `ProductsModule`. |
+| `ProductsModule` | Registra un `ClientProxy` (`PRODUCTS_SERVICE`) apuntando al mismo microservicio TCP para permitir orquestaciones internas o desde otros módulos. |
+| `ProductsController` | Expone rutas HTTP (`/products`) que devuelven el mock actual. Aunque el bootstrap es microservicio, estas rutas son útiles si se arranca la app como HTTP server en el futuro. |
+| `ProductsService` | Define las llamadas a patrones `{ cmd: 'get_accounts' }`, `{ cmd: 'get_product_by_id' }` y `{ cmd: 'get_products_by_user_id' }`. |
 
-```bash
-$ npm install
-```
+> Nota: hoy no existen `@MessagePattern` que procesen esos comandos. El mock se entrega directamente por HTTP y los patrones quedan listos para cuando se implemente la mensajería.
 
-## Compile and run the project
+## Endpoints disponibles
 
-```bash
-# development
-$ npm run start
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `GET` | `/products` | Lista todos los productos del mock. |
+| `GET` | `/products/:id` | Busca un producto por `id`. |
+| `GET` | `/products/by-user/:userId` | Filtra los productos asociados a un usuario. |
 
-# watch mode
-$ npm run start:dev
+Estos endpoints leen directamente de `PRODUCTS_MOCK`. Si quieres consultarlos mientras la app corre como microservicio, puedes exponerlos ejecutando `NestFactory.create(AppModule)` de manera alternativa o montando un gateway HTTP que use el mismo módulo.
 
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
+## Ejecución
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install       # instala dependencias
+npm run start     # levanta el microservicio TCP en 127.0.0.1:4010
+npm run start:dev # modo watch
+npm run start:prod
 ```
 
-## Deployment
+Como el arranque usa `createMicroservice`, la aplicación queda escuchando peticiones RPC/TCP. Si necesitas exponer HTTP simultáneamente, puedes crear un `main.http.ts` paralelo o ajustar `main.ts` para bootstrap dual (`create` + `connectMicroservice`).
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Tests
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+No hay pruebas personalizadas aún; `npm run test` ejecuta los ejemplos que genera NestJS por defecto. Para cubrir este dominio se recomienda agregar pruebas unitarias sobre `ProductsController` (validación de filtros) y pruebas de contrato para los futuros patrones de microservicio.
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+## Estructura principal
+
+```
+src/
+├── app.controller.ts      # endpoint raíz
+├── app.module.ts
+├── app.service.ts
+├── main.ts                # bootstrap como microservicio TCP
+└── products/
+    ├── products.controller.ts
+    ├── products.mock.ts
+    ├── products.module.ts
+    └── products.service.ts
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Con esto el README refleja el estado real del repositorio y aclara cómo está concebido el servicio.
