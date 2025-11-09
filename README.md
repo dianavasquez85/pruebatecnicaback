@@ -1,59 +1,68 @@
 # Prueba técnica – Productos (NestJS)
 
-Backend construido con NestJS que expone información de productos financieros. La aplicación se levanta como **microservicio TCP** (no como servidor HTTP tradicional) y actualiza la información a partir de un mock en memoria.
+API HTTP construida con NestJS para exponer información ficticia de productos financieros. El backend arranca con `NestFactory.create(AppModule)`, habilita CORS y escucha por defecto en `http://localhost:3002` (puerto configurable mediante `PORT`).
 
 ## Descripción general
 
 - **Framework:** NestJS + TypeScript.
-- **Tipo de servicio:** microservicio basado en `Transport.TCP` escuchando en `127.0.0.1:4010` (`src/main.ts`).
-- **Dominio:** productos/accounts de un usuario (cuentas, CDT, créditos, etc.) definidos en `src/products/products.mock.ts`.
-- **Estado de los datos:** mock en memoria; no hay conexión a base de datos ni a otros servicios.
+- **Tipo de servicio:** servidor HTTP (no microservicio TCP).
+- **Puerto:** `process.env.PORT ?? 3002`.
+- **Dominio:** productos asociados a usuarios (Cuentas, CDT, créditos, fondos, etc.).
+- **Datos:** mock en memoria (`src/products/products.mock.ts`), sin base de datos.
 
 ## Arquitectura
 
 | Componente | Detalle |
 | --- | --- |
-| `src/main.ts` | Usa `NestFactory.createMicroservice` y deja al servicio escuchando mensajes TCP. |
-| `AppModule` | Orquesta la aplicación importando `ProductsModule`. |
-| `ProductsModule` | Registra un `ClientProxy` (`PRODUCTS_SERVICE`) apuntando al mismo microservicio TCP para permitir orquestaciones internas o desde otros módulos. |
-| `ProductsController` | Expone rutas HTTP (`/products`) que devuelven el mock actual. Aunque el bootstrap es microservicio, estas rutas son útiles si se arranca la app como HTTP server en el futuro. |
-| `ProductsService` | Define las llamadas a patrones `{ cmd: 'get_accounts' }`, `{ cmd: 'get_product_by_id' }` y `{ cmd: 'get_products_by_user_id' }`. |
+| `src/main.ts` | Bootstrap HTTP, habilita CORS y levanta el servidor en el puerto configurado. |
+| `AppModule` | Registra `AppController` y `ProductsModule`. |
+| `ProductsModule` | Expone `ProductsController` y prepara un `ClientProxy` TCP (`PRODUCTS_SERVICE`) para futuras integraciones microservicio (`127.0.0.1:4010`). |
+| `ProductsController` | Responde a `/products` leyendo directamente del mock (sin servicio intermedio). |
+| `ProductsService` | Define métodos que enviarían mensajes `{ cmd: ... }` vía TCP; actualmente no es consumido. |
+| `products.mock.ts` | Contiene 20 productos con `id`, `userId`, `balance`, `currency` y `type`. |
 
-> Nota: hoy no existen `@MessagePattern` que procesen esos comandos. El mock se entrega directamente por HTTP y los patrones quedan listos para cuando se implemente la mensajería.
+> Aunque existe la configuración de `ClientsModule`, en esta versión no hay `@MessagePattern` ni microservicios activos. Toda la funcionalidad publicada es HTTP.
 
 ## Endpoints disponibles
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
-| `GET` | `/products` | Lista todos los productos del mock. |
-| `GET` | `/products/:id` | Busca un producto por `id`. |
-| `GET` | `/products/by-user/:userId` | Filtra los productos asociados a un usuario. |
+| `GET` | `/` | Saludo básico (`AppController`). |
+| `GET` | `/products` | Devuelve todo el mock de productos. |
+| `GET` | `/products/:id` | Busca un producto por su `id`. |
+| `GET` | `/products/by-user/:userId` | Filtra productos por `userId`. |
 
-Estos endpoints leen directamente de `PRODUCTS_MOCK`. Si quieres consultarlos mientras la app corre como microservicio, puedes exponerlos ejecutando `NestFactory.create(AppModule)` de manera alternativa o montando un gateway HTTP que use el mismo módulo.
+Las respuestas se generan al instante desde `PRODUCTS_MOCK` y no requieren autenticación.
 
 ## Ejecución
 
 ```bash
-npm install       # instala dependencias
-npm run start     # levanta el microservicio TCP en 127.0.0.1:4010
-npm run start:dev # modo watch
+npm install
+npm run start      # levanta en http://localhost:3002
+npm run start:dev  # modo watch
 npm run start:prod
 ```
 
-Como el arranque usa `createMicroservice`, la aplicación queda escuchando peticiones RPC/TCP. Si necesitas exponer HTTP simultáneamente, puedes crear un `main.http.ts` paralelo o ajustar `main.ts` para bootstrap dual (`create` + `connectMicroservice`).
-
 ## Tests
 
-No hay pruebas personalizadas aún; `npm run test` ejecuta los ejemplos que genera NestJS por defecto. Para cubrir este dominio se recomienda agregar pruebas unitarias sobre `ProductsController` (validación de filtros) y pruebas de contrato para los futuros patrones de microservicio.
+Nest trae comandos listos:
+
+```bash
+npm run test
+npm run test:e2e
+npm run test:cov
+```
+
+Aún no hay pruebas específicas para `ProductsController`. Se recomienda crear unit tests que validen filtros por `id` y `userId`, y añadir pruebas de contrato cuando el microservicio TCP esté implementado.
 
 ## Estructura principal
 
 ```
 src/
-├── app.controller.ts      # endpoint raíz
+├── app.controller.ts
 ├── app.module.ts
 ├── app.service.ts
-├── main.ts                # bootstrap como microservicio TCP
+├── main.ts
 └── products/
     ├── products.controller.ts
     ├── products.mock.ts
@@ -61,4 +70,11 @@ src/
     └── products.service.ts
 ```
 
-Con esto el README refleja el estado real del repositorio y aclara cómo está concebido el servicio.
+## Próximos pasos sugeridos
+
+1. Consumir `ProductsService` desde el controlador o un caso de uso cuando exista una fuente remota real.
+2. Implementar el microservicio TCP (o eliminar el `ClientsModule` si no se usará).
+3. Extraer configuración (puertos, hosts) al `ConfigModule`.
+4. Sustituir el mock por persistencia real y cubrir la lógica con pruebas unitarias/e2e.
+
+Este README resume cómo está concebida la solución hoy y deja claros los elementos pendientes para evolucionarla.
